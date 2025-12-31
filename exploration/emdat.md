@@ -36,6 +36,14 @@ from src.datasources import emdat, gaul, ibtracs
 ```
 
 ```python
+test = gaul.load_gaul(admin_level=1)
+```
+
+```python
+test[test["name0"].str.startswith("Haiti")]
+```
+
+```python
 # emdat.join_emdat_to_ibtracs()
 ```
 

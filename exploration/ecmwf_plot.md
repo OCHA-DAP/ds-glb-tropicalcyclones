@@ -48,6 +48,10 @@ cyclones
 ```
 
 ```python
+0.15*45+(0.15+0.2)*(15+60)
+```
+
+```python
 all_forecasts = ecmwf.load_ecmwf_besttrack_hindcasts()
 ```
 
