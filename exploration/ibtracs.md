@@ -42,10 +42,6 @@ ibtracs.download_ibtracs()
 ```
 
 ```python
-ibtracs.download_ibtracs(dataset="last3years")
-```
-
-```python
 last3years = xr.load_dataset(
     ibtracs.IBTRACS_RAW_DIR / "IBTrACS.last3years.v04r00.nc"
 )
@@ -56,15 +52,11 @@ allyears = ibtracs.load_all_ibtracs()
 ```
 
 ```python
+
+```
+
+```python
 allyears.isel(storm=-1)
-```
-
-```python
-["f", "f"] + ["dfas", "sdaf"]
-```
-
-```python
-last3years["time"]
 ```
 
 ```python
@@ -72,105 +64,65 @@ ibtracs.process_all_ibtracs()
 ```
 
 ```python
+ibtracs.process_all_ibtracs("usa")
+```
+
+```python
 ibtracs.calculate_adm0_distances()
 ```
 
 ```python
-ibtracs.concat_adm0_distances()
-```
-
-```python
-speeds = ibtracs.load_ibtracs_with_wmo_wind()
-speeds
-```
-
-```python
-speeds["time"].max()
-```
-
-```python
-distances = ibtracs.load_all_adm0_distances()
-distances = distances.merge(speeds[["row_id", "sid", "wmo_wind"]], on="row_id")
-distances
-```
-
-```python
-d_threshs = range(0, 501, 10)
-s_threshs = range(0, int(speeds["wmo_wind"].max() + 1), 5)
-
-dfs = []
-for d_thresh in tqdm(d_threshs):
-    for s_thresh in s_threshs:
-        dff = distances[
-            (distances["wmo_wind"] >= s_thresh)
-            & (distances["distance (m)"] <= d_thresh * 1000)
-        ]
-        dff = dff.groupby(["sid", "asap0_id"]).first().reset_index()
-        df_add = dff[["sid", "asap0_id"]]
-        df_add["d_thresh"] = d_thresh
-        df_add["s_thresh"] = s_thresh
-        dfs.append(df_add)
-```
-
-```python
-all_thresholds = pd.concat(dfs, ignore_index=True)
-```
-
-```python
-all_thresholds
-```
-
-```python
-filename = "all_adm0_thresholds.parquet"
-all_thresholds.to_parquet(ibtracs.IBTRACS_PROC_DIR / filename, index=False)
-```
-
-```python
-codabs = gaul.load_gaul()
-```
-
-```python
-codabs[codabs["name0_shr"] == "Fiji"].plot()
-```
-
-```python
-speeds["year"] = speeds["time"].dt.year
-```
-
-```python
-unique_storms = speeds.groupby("sid").first().reset_index()
-unique_storms
-```
-
-```python
-filename = "all_adm0_thresholds.parquet"
-all_thresholds = pd.read_parquet(ibtracs.IBTRACS_PROC_DIR / filename)
-```
-
-```python
-all_thresholds = all_thresholds.merge(
-    unique_storms[["sid", "year"]], on="sid", how="left"
+ibtracs.calculate_adm0_distances(
+    wind_provider="usa", start_year=2000, end_year=2023
 )
 ```
 
 ```python
-all_thresholds
+ibtracs.concat_adm0_distances("usa")
 ```
 
 ```python
-asap0_id = 116
-min_year = 1970
-
-dff = all_thresholds[
-    (all_thresholds["asap0_id"] == asap0_id)
-    & (all_thresholds["year"] >= min_year)
-]
-total_years = dff["year"].nunique()
-print(total_years)
-rp = total_years / dff.groupby(["d_thresh", "s_thresh"]).size()
-display(rp)
+ibtracs.
 ```
 
 ```python
-rp.loc[250].loc[90]
+usa_wind = ibtracs.load_ibtracs_with_wind("usa")
+```
+
+```python
+usa_wind.iloc[-20:]
+```
+
+```python
+ibtracs.concat_adm0_distances("usa")
+```
+
+```python
+ibtracs.calculate_thresholds("usa")
+```
+
+```python
+tracks = ibtracs.load_ibtracs_with_wind("wmo")
+cyclones = tracks.groupby("sid").first().reset_index()
+cyclones["year"] = cyclones["time"].dt.year
+cyclones["nameyear"] = cyclones.apply(
+    lambda row: f'{row["name"].capitalize()} {row["year"]}', axis=1
+)
+thresholds = ibtracs.load_thresholds("wmo", 0)
+thresholds = thresholds.merge(
+    cyclones[["sid", "name", "nameyear", "year"]], on="sid"
+)
+thresholds
+```
+
+```python
+cyclones.groupby("year")["sid"].count().plot()
+```
+
+```python
+cyclones[cyclones["year"] >= 1970].groupby("year")["sid"].count().plot()
+```
+
+```python
+cyclones[cyclones["year"] >= 2000].groupby("year")["sid"].count().plot()
 ```

@@ -27,8 +27,52 @@ From [https://public.emdat.be/data](https://public.emdat.be/data)
 import re
 
 import pycountry
+import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
+import pandas as pd
 
 from src.datasources import emdat, gaul, ibtracs
+```
+
+```python
+test = gaul.load_gaul(admin_level=1)
+```
+
+```python
+test[test["name0"].str.startswith("Haiti")]
+```
+
+```python
+# emdat.join_emdat_to_ibtracs()
+```
+
+```python
+tracks = ibtracs.load_ibtracs_with_wind("wmo")
+cyclones = tracks.groupby("sid").first().reset_index()
+cyclones["year"] = cyclones["time"].dt.year
+cyclones["nameyear"] = cyclones.apply(
+    lambda row: f'{row["name"].capitalize()} {row["year"]}', axis=1
+)
+```
+
+```python
+cyclones["sid"]
+```
+
+```python
+thresholds = ibtracs.load_thresholds("wmo", 0)
+thresholds = thresholds.merge(
+    cyclones[["sid", "name", "nameyear", "year"]], on="sid"
+)
+```
+
+```python
+thresholds
+```
+
+```python
+thresholds[thresholds["name"] == "TOMAS"].groupby(["sid", "asap0_id"]).first()
 ```
 
 ```python
@@ -37,264 +81,119 @@ adm0 = gaul.load_gaul()
 
 ```python
 for _, row in adm0.sort_values("asap0_id").iterrows():
-    print(f"{row['asap0_id']}\t{row['name0']}")
+    print(f'{row["asap0_id"]}\t{row["isocode"]}\t{row["name0"]}')
 ```
 
 ```python
-df = emdat.load_raw_emdat()
-
-
-def iso3_to_iso2(iso3):
-    backup = {"SPI": "ES"}
-    try:
-        return pycountry.countries.get(alpha_3=iso3).alpha_2
-    except AttributeError:
-        return backup.get(iso3)
-
-
-df["isocode"] = df["ISO"].apply(iso3_to_iso2)
-df["Event Name"] = df["Event Name"].fillna("")
-df = df.merge(adm0[["asap0_id", "isocode"]], on="isocode")
-df = df.rename(columns={"isocode": "iso2", "ISO": "iso3"})
+for _, row in adm0.sort_values("name0").iterrows():
+    print(f'{row["asap0_id"]}\t{row["isocode"]}\t{row["name0"]}')
 ```
 
 ```python
-tracks = ibtracs.load_ibtracs_with_wmo_wind()
-cyclones = tracks.groupby("sid")[["time", "name"]].first()
-cyclones["year"] = cyclones["time"].dt.year
-cyclones["month"] = cyclones["time"].dt.month
-cyclones = cyclones.drop(columns="time").reset_index()
-cyclones = cyclones[cyclones["year"] >= 1999]
+damage = emdat.load_emdat_with_sids()
+print(len(damage))
+damage["sid"] = damage["sid"].fillna("")
+damage = damage.merge(cyclones[["sid", "nameyear"]], on="sid", how="left")
+print(len(damage))
 ```
 
 ```python
-cyclones.sort_values("name")["name"].apply(lambda x: x.capitalize()).unique()
+damage.columns
 ```
 
 ```python
-thresholds = ibtracs.load_thresholds()
-thresholds = thresholds.merge(adm0[["asap0_id", "isocode"]], on="asap0_id")
-lenient_thresholds = thresholds[
-    (thresholds["d_thresh"] == thresholds["d_thresh"].max())
-    & (thresholds["s_thresh"] == thresholds["s_thresh"].min())
-]
+ADJ_DAMAGE = "Total Damage, Adjusted ('000 US$)"
+DEATHS = "Total Deaths"
+AFFECTED = "Total Affected"
 ```
 
 ```python
-typo_names = {
-    "Galifo": "Gafilo",
-    "Indhala": "Indlala",
-    "Feleng": "Felleng",
-    "Reshmi": "Rashmi",
-    "Chata": "Chataan",
-    "Chanom": "Chanhom",
-    "Tinh": "Sontinh",
-    "ChanHome": "Chanhom",
-    "Mangkut": "Mangkhut",
-    "Shaheen": "Shaheengu",
-    "Maisak": "Maysak",
-    "Kai": "Kaitak",
-    "Ciramon": "Cimaron",
-    "Hygos": "Higos",
-    "Beatrix": "Beatriz",
-    "Ulla": "Ula",
-    "Gamde": "Gamede",
-    "ExDineo": "Dineo",
-    "Orphelia": "Ophelia",
-}
+iso2 = "FJ"
+asap0_id = adm0[adm0["isocode"] == iso2].iloc[0]["asap0_id"]
+country_name = adm0[adm0["isocode"] == iso2].iloc[0]["name0"]
+year = 2000
+d_thresh = 250
+s_thresh = 95
 
-# these tracks are NOT on IBTrACS, despite being tracked by PAGASA
-known_not_recognized = [
-    ("Ineng", 2003, 126),
-    ("Winnie", 2004, 126),
-]
 
-phl_rename = {
-    ("Biring", 2000): "Longwang",
-    ("Kabayan", 2003): "Etau",
-    ("Henry", 2006): "Prapiroon",
-    ("Chedeng and Dodong", 2007): "Pabuk and Wutip",
-    ("Goring", 2007): "Wipha",
-    ("Tropical depression Maring", 2009): "Mujigae",
-    ("Tropical Depression Nando", 2009): "Koppu",
-    ("Typhoon Karen", 2012): "Sanba",
-    ("Tropcal storm Auring", 2013): "Sonamu",
-    ("Agaton (01W)", 2018): "Bolaven",
-}
-
-specific_sid = {
-    ("Auring", 2001, 126): "2001047N09134",
-    ('Tropical depression "Urduja"', 2009, 126): "2009324N06129",
-    ("Tropical depression 02W (Crising)", 2017, 126): "2017104N11130",
-    ("Tropical depression 'Usman'", 2018, 126): "2018358N07140",
-    ("Tropical depression 'Amang' (01W)", 2019, 126): "2019004N03175",
-    ("Tropical depression 'Ofel'", 2020, 126): "2020288N13124",
-    ("03B", 2000, 101): "2000331N09092",
-    ("01A", 2001, 101): "2001141N14068",
-    ("Tropical depression 'Vicky' (Krovanh)", 2020, 134): "2020353N06129",
-    ("Tropical depression 'Twe'", 2021, 134): "2021296N06127",
-    ("04B", 2000, 140): "2000358N08086",
-    ('Cyclone "Tomas"', 2010, 116): "2010069S12188",
-    ("Waka", 2001, 31): "2001363S10185",
-    ("Catarina", 2004, 191): "2004086S29318",
-    ("Cyclone 'Yemyin'", 2007, 199): "2007172N15088",
-    ("Cyclone 3A", 2013, 156): "2013310N06066",
-}
-
-# for impact events intended to cover two cyclones,
-# break the tie based on which one seemed more extreme,
-# and assign all the damage to that one
-
-# this can be done manually since there's only a few
-tiebreakers = {
-    # George 2007 was Cat 5, Jacob was Cat 3
-    ("George and Jacob", 2007, 208): "2007058S12135",
-    # near Madagascar, Eline was Cat 1, Gloria was just TS
-    ("Eline, Gloria", 2000, 51): "2000032S11116",
-    # Eric was TS, Fanele was Cat 4
-    ("Cyclones Eric and Fanele", 2009, 51): "2009017S20043",
-    # Nesat was Cat 2, Haitang was TS
-    ("Typhoon Nesat & Haitang", 2017, 126): "2017206N13129",
-    ("Typhoon Nesat & Haitang", 2017, 137): "2017206N13129",
-    ("Typhoon Nesat & Haitang", 2017, 62): "2017206N13129",
-    # close call (both Cat 1), but Utor seems to have had more impact in China
-    ("Durian and Utor", 2001, 62): "2001181N08141",
-}
-```
-
-```python
-def generate_regex_pattern(words_string: str):
-    words_string = words_string.replace("'", " ").replace("/", " ")
-    words = [
-        re.escape(re.sub(r"[^a-zA-Z\s]", "", word))
-        for word in words_string.split()
+thresholds_f = (
+    thresholds[
+        (thresholds["asap0_id"] == asap0_id) & (thresholds["year"] >= year)
     ]
-    words = [typo_names.get(word, word) for word in words if word != ""]
-    pattern = r"\b(" + "|".join(words) + r")\b"
-    return pattern
+    .groupby(["nameyear", "d_thresh", "year"])["s_thresh"]
+    .max()
+    .reset_index()
+)
+thresholds_f = thresholds_f.sort_values(
+    ["year", "d_thresh", "s_thresh"], ascending=False
+)
+country_cyclones = thresholds[
+    (thresholds["asap0_id"] == int(asap0_id))
+    & (thresholds["year"] >= int(year))
+].copy()
+country_cyclones["triggered"] = (country_cyclones["s_thresh"] == s_thresh) & (
+    country_cyclones["d_thresh"] == d_thresh
+)
+country_cyclones = country_cyclones.sort_values("year", ascending=False)
+triggered = country_cyclones.groupby("sid")["triggered"].any().reset_index()
 
+damage_f = damage[damage["asap0_id"] == asap0_id].sort_values(AFFECTED)
+damage_f = damage_f.merge(triggered, on="sid", how="left")
+```
 
-def match_any_word_in_column(word, pattern):
-    word = word.replace("-", "")
-    if re.search(pattern, word, re.IGNORECASE):
-        return True
-    else:
-        return False
+```python
+plot_col = ADJ_DAMAGE
 
+df_plot = damage_f.copy()
+df_plot = df_plot[df_plot[plot_col] > 0].sort_values(plot_col)
+df_plot["color"] = df_plot["triggered"].map(
+    {True: "red", False: "blue", np.nan: "grey"}
+)
 
-def emdat_row_to_sid(row, cyclones_df, thresholds_df):
-    verbose = False
-    emdat_name = row["Event Name"]
-    emdat_year = row["Start Year"]
-    emdat_asap0 = row["asap0_id"]
-    id_string = f"{emdat_name}, {emdat_year}, {emdat_asap0}"
-    if emdat_name == "":
-        return ""
-    if (emdat_name, emdat_year, emdat_asap0) in specific_sid:
-        if verbose:
-            print(f"found specific sid for {id_string}")
-        return specific_sid.get((emdat_name, emdat_year, emdat_asap0))
+fig = go.Figure()
 
-    # rename specific cyclones in PHL since they use different names
-    if emdat_asap0 == 126:
-        emdat_name = phl_rename.get((emdat_name, emdat_year), emdat_name)
+fig.add_trace(
+    go.Bar(
+        x=df_plot["nameyear"],
+        y=df_plot[plot_col],
+        hovertemplate="%{y:,.0f}",
+        marker_color=df_plot["color"],
+        showlegend=False,
+        name="",
+    )
+)
 
-    pattern = generate_regex_pattern(emdat_name)
-    dff = cyclones_df[
-        cyclones_df["name"].apply(match_any_word_in_column, args=(pattern,))
-    ]
-    if dff.empty:
-        if emdat_year > 2021:
-            if verbose:
-                print(f"no matching name, but year is {emdat_year}")
-            return ""
-        if (emdat_name, emdat_year, emdat_asap0) in known_not_recognized:
-            if verbose:
-                print(f"not recognized by IBTrACS, ignoring for {id_string}")
-            return ""
-        raise Exception(f"{pattern} not found for {id_string}")
-    if verbose:
-        print(f"{len(dff)} found matching name")
-    dff = dff[dff["year"].isin([emdat_year, emdat_year - 1])]
-    if dff.empty:
-        if emdat_year > 2021:
-            if verbose:
-                print(f"no matching name in year, but year is {emdat_year}")
-            return ""
-        raise Exception(f"{pattern} in {emdat_year} not found for {id_string}")
-    if verbose:
-        print(f"{len(dff)} found matching year")
-    triggered_sids = thresholds_df[thresholds_df["asap0_id"] == emdat_asap0][
-        "sid"
-    ]
-    dff_t = dff[dff["sid"].isin(triggered_sids)]
-    if dff_t.empty:
-        if emdat_year > 2021:
-            if verbose:
-                print(f"no matching sid, but year is {emdat_year}")
-            return ""
-        if len(dff) == 1:
-            dff_t = dff
-            if verbose:
-                print(
-                    "sid not triggered, setting to match based on name and year"
-                )
-        else:
-            if verbose:
-                print("multiple sids match, taking one with matching year")
-            dff_t = dff[dff["year"] == emdat_year]
-            if len(dff_t) > 1:
-                display(dff)
-                raise Exception(f"cannot decide which storm for {id_string}")
-    if verbose:
-        print(f"{len(dff_t)} found matching asap0 threshold")
-    if len(dff_t) > 1:
-        if (emdat_name, emdat_year, emdat_asap0) in tiebreakers:
-            if verbose:
-                print(f"found tiebreaker for {id_string}")
-            return tiebreakers.get((emdat_name, emdat_year, emdat_asap0))
-        display(dff_t)
-        raise Exception(f"multiple sids for {id_string}")
-    return dff_t.iloc[0]["sid"]
+for legend_name, color in zip(
+    ["Triggered", "Not Triggered", "No Track Data"], ["red", "blue", "grey"]
+):
+    fig.add_trace(
+        go.Bar(x=[None], y=[None], marker_color=color, name=legend_name)
+    )
 
-
-df["sid"] = df.apply(
-    emdat_row_to_sid, args=(cyclones, lenient_thresholds), axis=1
+fig.update_layout(
+    title=(
+        f"Cyclone Impact: '{plot_col}'<br>"
+        f"<sup>{country_name}, impact data since {max(year, 2000)}</sup>"
+    ),
+    xaxis_title="Cyclone",
+    yaxis_title=plot_col,
+    barmode="group",
+    height=500,
+    template="simple_white",
+    legend=dict(
+        x=0,
+        y=1,
+        xanchor="left",
+        yanchor="top",
+    ),
+    margin=dict(t=60),
+    hovermode="x",
 )
 ```
 
 ```python
-df
-```
-
-```python
-filename = "emdat-tropicalcyclone-2000-2022-processed-sids.csv"
-
-df.to_csv(emdat.EMDAT_PROC_DIR / filename, index=False)
-```
-
-```python
-total_damage = df.groupby("iso2")["Total Damage, Adjusted ('000 US$)"].sum()
-```
-
-```python
-total_damage
-```
-
-```python
-adm0
-```
-
-```python
-adm0_damage = adm0.merge(total_damage, right_index=True, left_on="isocode")
-```
-
-```python
-total_damage
-```
-
-```python
-adm0_damage.plot(column="Total Damage, Adjusted ('000 US$)")
+fig = px.line(thresholds_f, x="d_thresh", y="s_thresh", color="nameyear")
+fig.update_layout(height=600, template="simple_white")
 ```
 
 ```python
